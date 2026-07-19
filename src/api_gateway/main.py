@@ -1,35 +1,42 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import requests
-import os
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import httpx
+from contextlib import asynccontextmanager
+from limits import parse
+from limits.strategies import MovingWindowRateLimiter
+from limits.storage import MemoryStorage
 
-app = FastAPI(title="API Gateway")
+http_client = None
 
-RESERVAS_URL = os.getenv("RESERVAS_URL", "http://localhost:8001")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global http_client
+    http_client = httpx.AsyncClient()
+    yield
+    await http_client.aclose()
 
-class CompraTicket(BaseModel):
-    evento_id: str
-    cantidad: int
-    usuario_email: str
+app = FastAPI(title="API Gateway - Capa Resiliencia", lifespan=lifespan)
+
+storage = MemoryStorage()
+limiter = MovingWindowRateLimiter(storage)
+limite_peticiones = parse("5/second")
+
+RESERVAS_URL = "http://servicio-reservas:8001"
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    cliente_ip = request.client.host
+    if not limiter.hit(limite_peticiones, cliente_ip):
+        return JSONResponse(
+            status_code=429,
+            content={"status": "error", "message": "Saturación: Demasiadas peticiones."}
+        )
+    return await call_next(request)
 
 @app.post("/api/v1/comprar")
-async def procesar_compra(compra: CompraTicket):
-    # Aquí es donde el Integrante 3 (Tú antes, o tu compañero ahora) inyectará el Rate Limiter
+async def proxy_comprar(payload: dict):
     try:
-        response = requests.post(
-            f"{RESERVAS_URL}/reservas",
-            json={
-                "evento_id": compra.evento_id,
-                "cantidad": compra.cantidad,
-                "usuario_email": compra.usuario_email
-            },
-            timeout=30.0 # Permitimos tiempo suficiente para que corra el flujo por defecto
-        )
-        
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail"))
-            
+        response = await http_client.post(f"{RESERVAS_URL}/reservas", json=payload, timeout=30.0)
         return response.json()
-        
-    except requests.exceptions.RequestException:
-        raise HTTPException(status_code=503, detail="El sistema de reservas central no se encuentra disponible.")
+    except httpx.RequestError:
+        return JSONResponse(status_code=503, content={"detail": "Servicio de reservas offline."})
