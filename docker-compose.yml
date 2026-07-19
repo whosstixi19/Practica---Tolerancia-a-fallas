@@ -1,0 +1,61 @@
+# =====================================================================
+# SISTEMA DE RESERVAS — TOLERANCIA A FALLAS
+# =====================================================================
+# Escenarios de prueba (cambia según lo que quieras probar):
+#
+#   [BASE] Flujo normal:
+#     LATENCIA_ACTIVA: "false"  → Pagos responde rápido (sin latencia)
+#     (no tocar nada más)
+#     Uso: docker compose up --build
+#
+#   [CAOS-1] Circuit Breaker (Latencia en Pagos):
+#     LATENCIA_ACTIVA: "true"   → Pagos duerme 20s, Reservas hace timeout a los 3s
+#     El breaker se abre tras 3 fallos consecutivos
+#     Uso: docker compose up -d --build
+#
+#   [CAOS-2] Fallback Notificaciones:
+#     Se prueba con el flujo base. El stub falla ~50% de las requests
+#     por defecto (FALLA_INTERMITENTE="true")
+#     Uso: docker compose up --build  +  curl varias veces
+#
+#   [CAOS-3] Rate Limiter:
+#     Se prueba con k6 contra el Gateway en flujo base
+#     Uso: k6 run tests-chaos/script-carga-k6.js
+# =====================================================================
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  servicio-inventario:
+    build: src/servicio_inventario
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    depends_on: [redis]
+
+  servicio-pagos-stub:
+    build: src/servicio_pagos_stub
+    # PRUEBA CAOS-1: cambia a "true" para simular pasarela lenta (20s)
+    # y activar el Circuit Breaker en Reservas
+    environment:
+      LATENCIA_ACTIVA: "false"
+
+  servicio-notificaciones-stub:
+    build: src/servicio_notificaciones_stub
+
+  servicio-reservas:
+    build: src/servicio_reservas
+    environment:
+      INVENTARIO_URL: http://servicio-inventario:8002
+      PAGOS_URL: http://servicio-pagos-stub:8003
+      NOTIFICACIONES_URL: http://servicio-notificaciones-stub:8004
+    depends_on: [servicio-inventario, servicio-pagos-stub, servicio-notificaciones-stub]
+
+  api-gateway:
+    build: src/api_gateway
+    ports: ["8000:8000"]
+    environment:
+      RESERVAS_URL: http://servicio-reservas:8001
+    depends_on: [servicio-reservas]
