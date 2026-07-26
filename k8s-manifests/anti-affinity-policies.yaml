@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: anti-affinity-policies
+data:
+  descripcion: |
+    Politicas de podAntiAffinity implementadas para alta disponibilidad.
+    
+    Servicios con anti-affinity:
+    
+    1. servicio-reservas (replicas: 2)
+       - topologyKey: "kubernetes.io/hostname"
+       - Obliga a que cada replica se ejecute en un nodo fisico distinto
+       - Garantiza que si un nodo cae, queda al menos 1 replica activa
+    
+    2. servicio-inventario (replicas: 2)
+       - topologyKey: "kubernetes.io/hostname"
+       - Distribuye las replicas entre los 2 nodos del cluster
+       - Evita single point of failure en la base de datos de inventario
+    
+    Justificacion:
+    Segun el principio de alta disponibilidad en sistemas distribuidos,
+    un componente critico no debe tener todas sus replicas en el mismo
+    nodo fisico. topologyKey: "kubernetes.io/hostname" asegura que
+    Kubernetes programe los pods en nodos con diferente hostname,
+    distribuyendolos fisicamente.

@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: servicio-pagos-stub
+  labels:
+    app: servicio-pagos-stub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: servicio-pagos-stub
+  template:
+    metadata:
+      labels:
+        app: servicio-pagos-stub
+    spec:
+      containers:
+        - name: pagos
+          image: servicio-pagos-stub:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8003
+          env:
+            - name: LATENCIA_ACTIVA
+              value: "false"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: servicio-pagos-stub
+spec:
+  selector:
+    app: servicio-pagos-stub
+  ports:
+    - port: 8003
+      targetPort: 8003

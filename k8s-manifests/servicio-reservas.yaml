@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: servicio-reservas
+  labels:
+    app: servicio-reservas
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: servicio-reservas
+  template:
+    metadata:
+      labels:
+        app: servicio-reservas
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - servicio-reservas
+              topologyKey: "kubernetes.io/hostname"
+      containers:
+        - name: reservas
+          image: servicio-reservas:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8001
+          env:
+            - name: INVENTARIO_URL
+              value: "http://servicio-inventario:8002"
+            - name: PAGOS_URL
+              value: "http://servicio-pagos-stub:8003"
+            - name: NOTIFICACIONES_URL
+              value: "http://servicio-notificaciones-stub:8004"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: servicio-reservas
+spec:
+  selector:
+    app: servicio-reservas
+  ports:
+    - port: 8001
+      targetPort: 8001

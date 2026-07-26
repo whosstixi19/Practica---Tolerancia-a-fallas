@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: servicio-notificaciones
+  labels:
+    app: servicio-notificaciones
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: servicio-notificaciones
+  template:
+    metadata:
+      labels:
+        app: servicio-notificaciones
+    spec:
+      containers:
+        - name: notificaciones
+          image: servicio-notificaciones-stub:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8004
+          env:
+            - name: FALLA_INTERMITENTE
+              value: "true"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: servicio-notificaciones-stub
+spec:
+  selector:
+    app: servicio-notificaciones
+  ports:
+    - port: 8004
+      targetPort: 8004
