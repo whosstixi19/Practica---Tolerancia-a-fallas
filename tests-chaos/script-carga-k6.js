@@ -7,7 +7,7 @@ export const options = {
 };
 
 export default function () {
-  const baseUrl = __ENV.URL || 'http://localhost:8000/api/v1/comprar'; 
+  const baseUrl = __ENV.URL || 'http://100.70.227.75:30000/api/v1/comprar'; 
 
   const payload = JSON.stringify({
     evento_id: 'evento_1',
