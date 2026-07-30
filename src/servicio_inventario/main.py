@@ -23,7 +23,7 @@ async def startup_event():
         if not r.exists("evento_1"):
             r.set("evento_1", 100)
             print("[INVENTARIO] Evento 'evento_1' inicializado con 100 entradas.")
-    except redis.ConnectionError:
+    except Exception:
         print("[ALERTA] No se pudo conectar a Redis. Asegúrate de tenerlo corriendo.")
 
 @app.post("/inventario/descontar")
