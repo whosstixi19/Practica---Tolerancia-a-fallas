@@ -26,8 +26,8 @@ spec:
               topologyKey: "kubernetes.io/hostname"
       containers:
         - name: reservas
-          image: servicio-reservas:latest
-          imagePullPolicy: IfNotPresent
+          image: whosstixi/servicio-reservas:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8001
           env:

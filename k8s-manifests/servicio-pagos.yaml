@@ -16,8 +16,8 @@ spec:
     spec:
       containers:
         - name: pagos
-          image: servicio-pagos-stub:latest
-          imagePullPolicy: IfNotPresent
+          image: whosstixi/servicio-pagos-stub:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8003
           env:

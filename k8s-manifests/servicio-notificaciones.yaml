@@ -16,8 +16,8 @@ spec:
     spec:
       containers:
         - name: notificaciones
-          image: servicio-notificaciones-stub:latest
-          imagePullPolicy: IfNotPresent
+          image: whosstixi/servicio-notificaciones-stub:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8004
           env:
