@@ -1,7 +1,7 @@
 # Sistema de Reservas — Tolerancia a Fallas
 
 Arquitectura de microservicios con resiliencia aplicada para la materia de Sistemas Distribuidos.
-Implementa 5 patrones de tolerancia a fallas sobre un clúster multi-nodo de Minikube (Kubernetes)
+Implementa mecanismos de tolerancia a fallas sobre un clúster multi-nodo de Minikube (Kubernetes)
 y orquestación local con Docker Compose.
 
 ## Integrantes
@@ -22,15 +22,16 @@ Cliente HTTP
 │  API Gateway     │───▶│  Servicio Reservas   │
 │  :8000           │    │  :8001               │
 │  + Rate Limiter  │    │  + Circuit Breaker   │
+│  + HTTP status   │    │  + Rollback          │
 │  (5 req/s por IP)│    │  + Retries (Backoff) │
 └─────────────────┘    │  + Fallback Silencioso│
      │                  └──────┬───────┬───────┘
      │                         │       │
-     │                  ┌──────▼─┐ ┌───▼──────────┐
-     │                  │Invent. │ │ Pagos Stub   │
-     │                  │:8002   │ │ :8003        │
-     │                  │(Redis) │ │(Latencia 20s)│
-     │                  └────────┘ └──────────────┘
+     │                  ┌──────▼──┐ ┌───▼──────────┐
+     │                  │Invent.  │ │ Pagos Stub   │
+     │                  │:8002    │ │ :8003        │
+     │                  │Redis/Lua│ │(Latencia 20s)│
+     │                  └─────────┘ └──────────────┘
      │                         │
      │                  ┌──────▼──────────┐
      │                  │ Notif. Stub     │
@@ -60,7 +61,7 @@ Cliente HTTP
 - **Middleware** que limita a **5 peticiones/segundo por IP**
 - Usa la librería `limits` con `MovingWindowRateLimiter` + `MemoryStorage`
 - Responde **HTTP 429 (Too Many Requests)** cuando se excede el límite
-- Las cabeceras de respuesta incluyen el tiempo de espera sugerido
+- Conserva el **código HTTP real** que devuelve Reservas (`200`, `402`, `503`, etc.) para que la demo y k6 midan el resultado correcto
 
 ### 2. Circuit Breaker (Servicio Reservas → Pagos)
 
@@ -86,10 +87,30 @@ Cliente HTTP
 
 ### 5. Rollback Condicional (Servicio Reservas)
 
-- **Ubicación:** `src/servicio_reservas/main.py` — flujo `procesar_compra()`
+- **Ubicación:** `src/servicio_reservas/main.py` — endpoint `crear_reserva()`
 - Si el pago falla (timeout, error HTTP, Circuit Breaker abierto), se ejecuta automáticamente
   una llamada a `POST /inventario/devolver` para liberar el stock reservado
 - Esto evita inconsistencias en Redis (stock debitado pero pago no concretado)
+
+### 6. Descuento Atómico de Inventario (Servicio Inventario)
+
+- **Ubicación:** `src/servicio_inventario/main.py` — `SCRIPT_DESCONTAR_ATOMICO`
+- Usa un script Lua ejecutado dentro de Redis para hacer **validación de stock + descuento** como una sola operación atómica
+- Evita que dos compras simultáneas del último asiento dejen el inventario en negativo
+- Si no hay stock, responde `400` sin descontar; si el evento no existe, responde `404`
+
+---
+
+## Mapeo de los 6 Fallos de la Consigna
+
+| Fallo | Mecanismo de inyección | Defensa implementada o propuesta |
+|---|---|---|
+| Inventario Fantasma | `kubectl delete pod` sobre un pod de `servicio-inventario` | Retry con backoff desde Reservas + recreación automática por ReplicaSet |
+| Pasarela Lenta | `kubectl set env deployment/servicio-pagos-stub LATENCIA_ACTIVA=true` | Timeout de 3s + Circuit Breaker + rollback de inventario |
+| Diluvio de Peticiones | k6 con 50 usuarios virtuales contra el API Gateway | Rate Limiter con HTTP 429 |
+| Base de Datos Intermitente | NetworkPolicy, reinicio de Redis o corte temporal de conectividad hacia `redis` | Pendiente para análisis teórico/producción: Redis HA, Sentinel/Cluster, retries acotados e idempotencia |
+| Correo Perdido | `kubectl scale deployment servicio-notificaciones --replicas=0` | Fallback silencioso: la compra no se cancela si falla Notificaciones |
+| Condición de Carrera | Dos o más clientes comprando el último asiento al mismo tiempo | Descuento atómico en Redis con Lua |
 
 ---
 
@@ -174,10 +195,10 @@ minikube image load servicio-notificaciones-stub:latest
 kubectl apply -f k8s-manifests/
 ```
 
-Esto crea 7 recursos:
-- 5 Deployments (uno por servicio)
-- 1 Service (api-gateway, tipo LoadBalancer)
-- 1 ConfigMap (anti-affinity)
+Esto crea los recursos principales del sistema:
+- 6 Deployments (API Gateway, Reservas, Inventario, Pagos, Notificaciones y Redis)
+- 6 Services internos/externos, incluyendo `api-gateway` como `NodePort`
+- 1 ConfigMap descriptivo de anti-affinity
 
 ### 5. Verificar que todo esté Running
 
@@ -185,7 +206,7 @@ Esto crea 7 recursos:
 minikube kubectl -- get pods -o wide
 ```
 
-Deben aparecer **7 pods** en estado `Running`. Los pods de `servicio-reservas` e `servicio-inventario`
+Deben aparecer **8 pods** en estado `Running`. Los pods de `servicio-reservas` y `servicio-inventario`
 tienen 2 réplicas cada uno, distribuidos en los 2 nodos.
 
 ### 6. Exponer el API Gateway
@@ -405,10 +426,9 @@ O mejor, usa directamente el script `.ps1` (PowerShell) que ya está preparado.
 /
 ├── docker-compose.yml               # Orquestación local (Docker Compose)
 ├── README.md                        # Este archivo
-├── main.tex                         # Reporte en LaTeX (para entrega académica)
 ├── src/
 │   ├── api_gateway/
-│   │   ├── main.py                  # FastAPI + Rate Limiter (5 req/s/IP)
+│   │   ├── main.py                  # FastAPI + Rate Limiter + preservación de códigos HTTP
 │   │   ├── requirements.txt
 │   │   └── Dockerfile
 │   ├── servicio_reservas/
@@ -416,7 +436,7 @@ O mejor, usa directamente el script `.ps1` (PowerShell) que ya está preparado.
 │   │   ├── requirements.txt
 │   │   └── Dockerfile
 │   ├── servicio_inventario/
-│   │   ├── main.py                  # CRUD con Redis
+│   │   ├── main.py                  # Inventario Redis + descuento atómico con Lua
 │   │   ├── requirements.txt
 │   │   └── Dockerfile
 │   ├── servicio_pagos_stub/
@@ -428,13 +448,13 @@ O mejor, usa directamente el script `.ps1` (PowerShell) que ya está preparado.
 │       ├── requirements.txt
 │       └── Dockerfile
 ├── k8s-manifests/                   # Manifiestos para Kubernetes
-│   ├── api-gateway-deployment.yaml
-│   ├── servicio-reservas-deployment.yaml
-│   ├── servicio-inventario-deployment.yaml
-│   ├── servicio-pagos-stub-deployment.yaml
-│   ├── servicio-notificaciones-stub-deployment.yaml
-│   ├── api-gateway-service.yaml
-│   └── anti-affinity-configmap.yaml
+│   ├── api-gateway.yaml
+│   ├── servicio-reservas.yaml
+│   ├── servicio-inventario.yaml
+│   ├── servicio-pagos.yaml
+│   ├── servicio-notificaciones.yaml
+│   ├── redis.yaml
+│   └── anti-affinity-policies.yaml
 ├── tests-chaos/                     # Pruebas de caos
 │   ├── escenarios-caos.ps1          # Script automatizado (PowerShell)
 │   ├── escenarios-caos.sh           # Script automatizado (Bash — requiere ajustes en Windows)
