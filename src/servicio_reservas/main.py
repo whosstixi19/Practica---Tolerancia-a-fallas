@@ -55,8 +55,8 @@ class CircuitBreakerAsincrono:
                 print(f"[CIRCUIT BREAKER] Circuito abierto por {self.reset_timeout}s.")
 
 
-inventario_breaker = CircuitBreakerAsincrono(fail_max=3, reset_timeout=30)
-pagos_breaker = CircuitBreakerAsincrono(fail_max=3, reset_timeout=30)
+inventario_breaker = CircuitBreakerAsincrono(fail_max=3, reset_timeout=10)
+pagos_breaker = CircuitBreakerAsincrono(fail_max=3, reset_timeout=10)
 
 
 @retry(
@@ -119,6 +119,7 @@ async def crear_reserva(payload: dict):
             
     except HTTPException as e:
         print(f"[CIRCUITO BLOQUEADO] {e.detail}")
+        return JSONResponse(status_code=503, content={"message": "Servicio de pagos no disponible. Intente más tarde."})
 
     if not pago_exitoso and inventario_ok:
         print("[ROLLBACK] Liberando asientos en Redis debido a fallas en el pago.")

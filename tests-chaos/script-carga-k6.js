@@ -10,10 +10,10 @@ export default function () {
   const baseUrl = __ENV.URL || 'http://100.70.227.75:30000/api/v1/comprar'; 
 
   const payload = JSON.stringify({
-    evento_id: 'evento_1',
-    cantidad: 1,
-    usuario_email: 'jose.tixi@est.ups.edu.ec' 
-  });
+  "evento_id": "evento_1",
+  "cantidad": 1,
+  "usuario_email": "demo@test.com"
+});
 
   const params = {
     headers: {
