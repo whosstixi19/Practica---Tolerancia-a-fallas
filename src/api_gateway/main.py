@@ -37,6 +37,12 @@ async def rate_limit_middleware(request: Request, call_next):
 async def proxy_comprar(payload: dict):
     try:
         response = await http_client.post(f"{RESERVAS_URL}/reservas", json=payload, timeout=30.0)
-        return response.json()
+        # Codigo anterior:
+        # return response.json()
+        #
+        # Por que se cambio:
+        # Si Reservas devolvia 402/503, el Gateway regresaba el cuerpo con HTTP 200.
+        # Ahora conserva el codigo HTTP original para que la demo y k6 midan la respuesta real.
+        return JSONResponse(status_code=response.status_code, content=response.json())
     except httpx.RequestError:
         return JSONResponse(status_code=503, content={"detail": "Servicio de reservas offline."})
