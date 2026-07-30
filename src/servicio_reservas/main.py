@@ -94,6 +94,8 @@ async def crear_reserva(payload: dict):
             inventario_ok = True
         else:
             raise HTTPException(status_code=400, detail="Sin asientos disponibles.")
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=503, detail="Servicio de Inventario no disponible transitoriamente.")
 
